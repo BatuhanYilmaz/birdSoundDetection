@@ -2,7 +2,7 @@
 print("Let's start!\n")
 print("Loading...")
 
-import glob 
+import glob
 import random
 print("...")
 
@@ -20,10 +20,11 @@ from sklearn.model_selection import train_test_split
 
 from keras.utils.np_utils import to_categorical
 
+import json
 import time
 print("...")
 import numpy as np
-from sklearn import metrics 
+from sklearn import metrics
 print("...")
 from sklearn.datasets import make_regression
 from sklearn.preprocessing import StandardScaler
@@ -38,25 +39,14 @@ print("Libraries are imported successfully")
 datafolder = "/content/drive/My Drive/Datasets/ff1010bird/"
 loc = datafolder+"wav/"
 metadata = pd.read_csv("/content/drive/My Drive/Datasets/ff1010bird/ff1010bird_metadata_2018.csv")
-m,n = metadata.shape
-P = 0.05
-idx = np.random.permutation(m)
-metadataTrain = metadata.iloc[idx[:round(P*m)]] 
-metadataValidation = metadata.iloc[idx[round(P*m):round(m/10)]]
-trainFiles = [loc+str(s)+".wav" for s in metadataTrain["itemid"]]
-#print(trainFiles)
-trainLabels = [str(s) for s in metadataTrain["hasbird"]]
-#print(trainLabels)
-validationFiles = [loc+str(s)+".wav" for s in metadataValidation["itemid"]]
-#print(validationFiles)
-validationLabels = [str(s) for s in metadataValidation["hasbird"]]
-#print(validationLabels)
-trainFiles = np.vstack((trainFiles, trainLabels)).T
-#print(trainFiles)
-validationFiles = np.vstack((validationFiles,validationLabels)).T
-#print(validationFiles),
+metadataFiles = [loc+str(s)+".wav" for s in metadata["itemid"]]
+#print(metadataFiles)
+metadataLabels = [str(s) for s in metadata["hasbird"]]
+#print(metadataLabels)
+metadataFiles = np.vstack((metadataFiles, metadataLabels)).T
+#print(metadataFiles)
 
-# Function for extracting features 
+# Function for extracting features
 def extract_features(dir,
                      bands=40,frames=41):
   def _windows(data, window_size):
@@ -65,7 +55,7 @@ def extract_features(dir,
       yield int(start), int(start + window_size)
       start += (window_size // 2)
 
-          
+
   window_size = 512 * (frames - 1)
   features, labels = [], []
   for fn in dir:
@@ -80,27 +70,63 @@ def extract_features(dir,
         logspec = logspec.T.flatten()[:, np.newaxis].T
         segment_log_specgrams.append(logspec)
         segment_labels.append(label)
-            
+
     segment_log_specgrams = np.asarray(segment_log_specgrams).reshape(
                 len(segment_log_specgrams),bands,frames,1)
     segment_features = np.concatenate((segment_log_specgrams, np.zeros(
                 np.shape(segment_log_specgrams))), axis=3)
-    for i in range(len(segment_features)): 
+    for i in range(len(segment_features)):
       segment_features[i, :, :, 1] = librosa.feature.delta(
-                    segment_features[i, :, :, 0]) 
-    if len(segment_features) > 0: # check for empty segments 
+                    segment_features[i, :, :, 0])
+    if len(segment_features) > 0: # check for empty segments
       features.append(segment_features)
       labels.append(segment_labels)
   return features, labels
 print("What the heck")
-# Loading and extracting features from sound files
-sc, sr = librosa.load("/content/drive/My Drive/Datasets/ff1010bird/wav/191742.wav")
-#ti = TicToc() # create TicToc instance
-#ti.tic() # Start timer
-#print(trainFiles[0][1])
-trainfeatureVectors, trainVectorLabels=extract_features(trainFiles)
-ValidationfeatureVectors, ValidationVectorLabels=extract_features(validationFiles)
-#ti.toc() # Print elapsed time
+# Extracting features from sound files and save them to file
+"""for i in range (int (len(metadataFiles)/100)+1):
+  if (len(metadataFiles)%100)==0 and i==(len(metadataFiles)/100):
+    break
+  if i==(len(metadataFiles)/100):
+    featureVectors, VectorLabels=extract_features(metadataFiles[:][i*100:len(metadataFiles)])
+  else:
+    featureVectors, VectorLabels=extract_features(metadataFiles[:][i*100:(i+1)*100])
+  featureVectors= np.array(featureVectors).tolist()
+  VectorLabels= np.array(VectorLabels).tolist()
+  with open('/content/drive/My Drive/Datasets/ff1010bird/mfcc_mfccdelta/'+'features_'+str(i)+'.json', 'w') as f:
+    json.dump(featureVectors, f)
+  with open('/content/drive/My Drive/Datasets/ff1010bird/mfcc_mfccdelta/'+'labels_'+str(i)+'.json', 'w') as f:
+    json.dump(VectorLabels, f)
+  print(str(i))"""
+
+#Load features and labels from trainFiles
+for i in range (int (len(metadataFiles)/100)+1):
+  if (len(metadataFiles)%100)==0 and i==(len(metadataFiles)/100):
+    break
+  with open('/content/drive/My Drive/Datasets/ff1010bird/mfcc_mfccdelta/'+'features_'+str(i)+'.json','r') as fs:
+    featureVectorstmp = json.loads(fs.read())
+  with open('/content/drive/My Drive/Datasets/ff1010bird/mfcc_mfccdelta/'+'labels_'+str(i)+'.json','r') as f:
+    VectorLabelstmp = json.loads(f.read())
+  if i==0:
+    featureVectors=featureVectorstmp
+    VectorLabels=VectorLabelstmp
+  else:
+    featureVectors=np.concatenate((featureVectors,featureVectorstmp))
+    VectorLabels=np.concatenate((VectorLabels,VectorLabelstmp))
+  fs.close()
+  f.close()
+print("Features and labels loaded")
+
+#Determine train and dev sets from the dataset
+print(len(featureVectors))
+m = len(VectorLabels)
+P = 0.9
+idx = np.random.permutation(m)
+trainfeatureVectors=featureVectors[idx[:round(P*m)]]
+trainVectorLabels=VectorLabels[idx[:round(P*m)]]
+ValidationfeatureVectors=featureVectors[idx[round(P*m):round(m)]]
+ValidationVectorLabels=VectorLabels[idx[round(P*m):round(m)]]
+del featureVectors, VectorLabels
 
 # Reshaping (flattening) the extracted features to make them suitable for inserting the model
 trainVectorLabels = np.array(trainVectorLabels).flatten()
@@ -108,28 +134,26 @@ trainVectorLabels = trainVectorLabels.reshape(len(trainVectorLabels),1)
 ValidationVectorLabels = np.array(ValidationVectorLabels).flatten()
 ValidationVectorLabels = ValidationVectorLabels.reshape(len(ValidationVectorLabels),1)
 
-trainfeatureVectors_flat = np.array(trainfeatureVectors).flatten()
-trainfeatureVectors_flat = trainfeatureVectors_flat.reshape(int(trainfeatureVectors_flat.shape[0]/len(trainVectorLabels)),len(trainVectorLabels))
+trainfeatureVectors = np.array(trainfeatureVectors).flatten()
+trainfeatureVectors = trainfeatureVectors.reshape(int(trainfeatureVectors.shape[0]/len(trainVectorLabels)),len(trainVectorLabels))
 
 # Normalizing the vector values
-norm_train = np.linalg.norm(trainfeatureVectors_flat)
-trainfeatureVectors_flat = trainfeatureVectors_flat/norm_train #########
+trainfeatureVectors = trainfeatureVectors/np.linalg.norm(trainfeatureVectors) #########
 
-print("Dim of feature vectors of training set: " + trainfeatureVectors_flat.shape)
-#trainVectorLabels_flat = trainfeatureVectors.flatten()
-ValidationfeatureVectors_flat = np.array(ValidationfeatureVectors).flatten()
-ValidationfeatureVectors_flat = ValidationfeatureVectors_flat.reshape(int(ValidationfeatureVectors_flat.shape[0]/len(ValidationVectorLabels)),len(ValidationVectorLabels))
+print("Dim of feature vectors of training set: " + trainfeatureVectors.shape)
+
+ValidationfeatureVectors = np.array(ValidationfeatureVectors).flatten()
+ValidationfeatureVectors = ValidationfeatureVectors.reshape(int(ValidationfeatureVectors.shape[0]/len(ValidationVectorLabels)),len(ValidationVectorLabels))
 
 # Normalizing the vector values
-norm_validation = np.linalg.norm(ValidationfeatureVectors_flat)
-ValidationfeatureVectors_flat = ValidationfeatureVectors_flat/norm_validation #########
+ValidationfeatureVectors = ValidationfeatureVectors/np.linalg.norm(ValidationfeatureVectors) #########
 
-print("Dim of feature vectors of validation set: " + ValidationfeatureVectors_flat.shape)
+print("Dim of feature vectors of validation set: " + ValidationfeatureVectors.shape)
 
-# Constructing the model 
+# Constructing the model
 model = tf.keras.Sequential(
     [
-        tf.keras.Input(shape=(trainfeatureVectors_flat.shape[0])),
+        tf.keras.Input(shape=(trainfeatureVectors.shape[0])),
         # tf.keras.layers.experimental.RandomFourierFeatures(
         #     output_dim=4096, scale=10.0, kernel_initializer="gaussian"
         # ),
@@ -154,13 +178,13 @@ model.compile(
 )
 
 # Fitting the training data into the model
-history = model.fit(trainfeatureVectors_flat.T.astype(np.float),trainVectorLabels.astype(np.float),batch_size = 512,epochs=50,verbose=0,shuffle=True)
+history = model.fit(trainfeatureVectors.T.astype(np.float),trainVectorLabels.astype(np.float),batch_size = 512,epochs=50,verbose=0,shuffle=True)
 
 model.summary()
 
 #Evaluating and making predictoin with validation set
-valid_loss, valid_acc = model.evaluate(ValidationfeatureVectors_flat.T.astype(np.float), ValidationVectorLabels.astype(np.float))
-predictions = model.predict(ValidationfeatureVectors_flat.T.astype(np.float))
+valid_loss, valid_acc = model.evaluate(ValidationfeatureVectors.T.astype(np.float), ValidationVectorLabels.astype(np.float))
+predictions = model.predict(ValidationfeatureVectors.T.astype(np.float))
 
 # predictions = model.predict(ValidationfeatureVectors_flat.T.astype(np.float))
 
